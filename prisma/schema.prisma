@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum AccessLevel {
+  FULL
+  OPERATIONAL
+  READ_ONLY
+  CUSTOM
+}
+
+enum AccessPermission {
+  PROFILE
+  APPEARANCE
+  LINKS
+  WHATSAPP
+  SOCIALS
+  CATALOG
+  PRODUCTS
+  PRICES
+  SERVICES
+  PIX
+  WIFI
+  LOCATION
+  ANALYTICS
+  DOMAIN
+  PUBLISH
+  SETTINGS
+  DELETE_BIOSITE
+}
+
+enum BioSiteMediaType {
+  PHOTO
+  VIDEO
+}
+
+enum BioSiteMediaUsage {
+  GALLERY
+  AVATAR
+  LOGO
+  COVER
+  BACKGROUND
+  INTRO
+}
+
+model BioSite {
+  id                   String           @id
+  ownerId              String?          @map("owner_id")
+  clientAccountId      String?          @map("client_account_id")
+  slug                 String           @unique
+  name                 String
+  status               String           @default("draft")
+  avatarUrl            String?          @map("avatar_url")
+  logoUrl              String?          @map("logo_url")
+  coverImageUrl        String?          @map("cover_image_url")
+  introVideoUrl        String?          @map("intro_video_url")
+  backgroundType       String           @default("solid") @map("background_type")
+  backgroundColor      String?          @map("background_color")
+  backgroundGradient   String?          @map("background_gradient")
+  backgroundImageUrl   String?          @map("background_image_url")
+  backgroundVideoUrl   String?          @map("background_video_url")
+  theme                Json?
+  content              Json?
+  clientAccessEmail    String?          @map("client_access_email")
+  clientAccessPasswordHash String?       @map("client_access_password_hash")
+  photoLimit           Int              @default(10) @map("photo_limit")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+  accessKeys           BioSiteAccessKey[]
+  media                BioSiteMedia[]
+  bookings             BioSiteBooking[]
+  leads                BioSiteLead[]
+  clientAccount        ClientAccount?   @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+
+  @@map("bio_sites")
+}
+
+model ClientAccount {
+  id           String          @id @default(cuid())
+  name         String
+  email        String          @unique
+  passwordHash String          @map("password_hash")
+  status       String          @default("active")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  bioSites     BioSite[]
+  sessions     ClientSession[]
+
+  @@map("client_accounts")
+}
+
+model ClientSession {
+  id         String        @id @default(cuid())
+  tokenHash  String        @unique @map("token_hash")
+  accountId  String        @map("account_id")
+  expiresAt  DateTime      @map("expires_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  account    ClientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, expiresAt])
+  @@map("client_sessions")
+}
+
+model BioSiteBooking {
+  id            String   @id @default(cuid())
+  bioSiteId     String   @map("bio_site_id")
+  serviceId     String?  @map("service_id")
+  serviceName   String   @map("service_name")
+  customerName  String   @map("customer_name")
+  customerEmail String?  @map("customer_email")
+  customerPhone String?  @map("customer_phone")
+  date          String
+  time          String
+  status        String   @default("pending")
+  createdAt     DateTime @default(now()) @map("created_at")
+  bioSite       BioSite  @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+
+  @@index([bioSiteId, status])
+  @@map("bio_site_bookings")
+}
+
+model BioSiteLead {
+  id        String   @id @default(cuid())
+  bioSiteId String   @map("bio_site_id")
+  name      String?
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  bioSite   BioSite  @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+
+  @@index([bioSiteId, createdAt])
+  @@map("bio_site_leads")
+}
+
+model BioSiteMedia {
+  id             String            @id @default(cuid())
+  bioSiteId      String            @map("bio_site_id")
+  type           BioSiteMediaType
+  usage          BioSiteMediaUsage @default(GALLERY)
+  url            String
+  storageKey     String?           @map("storage_key")
+  mimeType       String?           @map("mime_type")
+  fileSize       Int?              @map("file_size")
+  width          Int?
+  height         Int?
+  durationSeconds Int?             @map("duration_seconds")
+  sortOrder      Int               @default(0) @map("sort_order")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  bioSite        BioSite           @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+
+  @@index([bioSiteId, type, usage])
+  @@index([bioSiteId, sortOrder])
+  @@map("bio_site_media")
+}
+
+model BioSiteAccessKey {
+  id           String                     @id @default(cuid())
+  bioSiteId    String                     @map("bio_site_id")
+  name         String
+  keyPrefix    String                     @map("key_prefix")
+  keyHash      String                     @unique @map("key_hash")
+  level        AccessLevel
+  isActive     Boolean                    @default(true) @map("is_active")
+  expiresAt    DateTime?                  @map("expires_at")
+  lastUsedAt   DateTime?                  @map("last_used_at")
+  createdAt    DateTime                   @default(now()) @map("created_at")
+  updatedAt    DateTime                   @updatedAt @map("updated_at")
+  bioSite      BioSite                    @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+  permissions  BioSiteAccessPermission[]
+
+  @@index([bioSiteId, isActive])
+  @@index([keyPrefix])
+  @@map("bio_site_access_keys")
+}
+
+model BioSiteAccessPermission {
+  accessKeyId String           @map("access_key_id")
+  permission  AccessPermission
+  allowed     Boolean          @default(true)
+  accessKey   BioSiteAccessKey @relation(fields: [accessKeyId], references: [id], onDelete: Cascade)
+
+  @@id([accessKeyId, permission])
+  @@map("bio_site_access_permissions")
+}
