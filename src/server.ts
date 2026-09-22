@@ -13,14 +13,16 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SERV
 
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
-  if (origin === frontendOrigin) return true;
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const url = new URL(origin);
-      return ['localhost', '127.0.0.1'].includes(url.hostname);
-    } catch {
-      return false;
-    }
+  const allowed = frontendOrigin.split(',').map(o => o.trim());
+  if (allowed.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    // Allow any localhost, any vercel.app domain, and render.com
+    if (['localhost', '127.0.0.1'].includes(url.hostname)) return true;
+    if (url.hostname.endsWith('.vercel.app')) return true;
+    if (url.hostname.endsWith('.onrender.com')) return true;
+  } catch {
+    return false;
   }
   return false;
 }
