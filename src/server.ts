@@ -246,6 +246,69 @@ async function toRecordData(payload: BioSitePayload) {
   };
 }
 
+function validateBioSiteFeatures(payload: BioSitePayload): string | null {
+  const events = payload.events;
+  if (events !== undefined && events !== null) {
+    if (!Array.isArray(events)) return 'events deve ser uma lista.';
+    if (events.length > 2) return 'Cada Bio Site pode ter no máximo 2 eventos.';
+
+    for (const [index, value] of events.entries()) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return `O evento ${index + 1} é inválido.`;
+      }
+      const event = value as Record<string, unknown>;
+      const eventDate = typeof event.date === 'string' ? event.date : '';
+      const parsedDate = Date.parse(`${eventDate}T00:00:00.000Z`);
+      if (
+        typeof event.title !== 'string' || !event.title.trim() ||
+        typeof event.description !== 'string' || !event.description.trim() ||
+        typeof event.imageUrl !== 'string' || !event.imageUrl.trim() ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(eventDate) ||
+        !Number.isFinite(parsedDate) || new Date(parsedDate).toISOString().slice(0, 10) !== eventDate
+      ) {
+        return `O evento ${index + 1} precisa de título, foto, data válida e descrição.`;
+      }
+    }
+  }
+
+  const openingSchedules = payload.openingSchedules;
+  if (openingSchedules !== undefined && openingSchedules !== null) {
+    if (!Array.isArray(openingSchedules)) return 'openingSchedules deve ser uma lista.';
+    for (const [index, value] of openingSchedules.entries()) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return `O horário ${index + 1} é inválido.`;
+      }
+      const schedule = value as Record<string, unknown>;
+      if (
+        typeof schedule.title !== 'string' || !schedule.title.trim() ||
+        !Array.isArray(schedule.days) || schedule.days.length === 0
+      ) {
+        return `O horário ${index + 1} precisa de título e ao menos um dia.`;
+      }
+      const seenDays = new Set<number>();
+      for (const dayValue of schedule.days) {
+        if (!dayValue || typeof dayValue !== 'object' || Array.isArray(dayValue)) {
+          return `Os dias do horário ${index + 1} são inválidos.`;
+        }
+        const day = dayValue as Record<string, unknown>;
+        const openTime = typeof day.openTime === 'string' ? day.openTime : '';
+        const closeTime = typeof day.closeTime === 'string' ? day.closeTime : '';
+        if (
+          !Number.isInteger(day.day) || Number(day.day) < 0 || Number(day.day) > 6 ||
+          !/^([01]\d|2[0-3]):[0-5]\d$/.test(openTime) ||
+          !/^([01]\d|2[0-3]):[0-5]\d$/.test(closeTime) || openTime >= closeTime ||
+          seenDays.has(Number(day.day))
+        ) {
+          return `Os dias e horários do horário ${index + 1} são inválidos.`;
+        }
+        seenDays.add(Number(day.day));
+      }
+    }
+  }
+
+  return null;
+}
+
 function extractStorageKeyFromUrl(url: string | null | undefined, supabaseUrl: string): { bucket: string; key: string } | null {
   if (!url) return null;
   try {
@@ -601,6 +664,8 @@ app.get('/api/bio-sites/:id', requireActiveUser, async (request: AuthenticatedRe
 
 app.post('/api/bio-sites', requireActiveUser, async (request: AuthenticatedRequest, response) => {
   const payload = request.body as BioSitePayload;
+  const featureError = validateBioSiteFeatures(payload);
+  if (featureError) { response.status(400).json({ error: featureError }); return; }
   const id = typeof payload.id === 'string' && payload.id ? payload.id : randomUUID();
   const data = await toRecordData(payload);
   if (!data.slug || !data.name) {
@@ -624,6 +689,8 @@ app.post('/api/bio-sites', requireActiveUser, async (request: AuthenticatedReque
 
 app.put('/api/bio-sites/:id', requireClientOrOwner, async (request: AuthenticatedRequest, response) => {
   const payload = request.body as BioSitePayload;
+  const featureError = validateBioSiteFeatures(payload);
+  if (featureError) { response.status(400).json({ error: featureError }); return; }
   const data = await toRecordData(payload);
   if (!data.slug || !data.name) {
     response.status(400).json({ error: 'name e slug são obrigatórios.' });

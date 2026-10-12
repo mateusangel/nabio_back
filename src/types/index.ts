@@ -328,6 +328,26 @@ export interface BioSiteBlock {
   data?: Record<string, any>;
 }
 
+export interface BioSiteEvent {
+  id: string;
+  title: string;
+  date: string;
+  description: string;
+  imageUrl: string;
+}
+
+export interface OpeningScheduleDay {
+  day: number;
+  openTime: string;
+  closeTime: string;
+}
+
+export interface OpeningSchedule {
+  id: string;
+  title: string;
+  days: OpeningScheduleDay[];
+}
+
 export interface BioSite {
   id: string;
   organizationId: string;
@@ -360,6 +380,10 @@ export interface BioSite {
   categories: ProductCategory[];
   products: ProductItem[];
   services: ServiceItem[];
+  events?: BioSiteEvent[];
+  openingSchedules?: OpeningSchedule[];
+  events?: BioSiteEvent[];
+  openingSchedules?: OpeningSchedule[];
   pix: PixSettings;
   wifi: WifiSettings;
   location: LocationSettings;
