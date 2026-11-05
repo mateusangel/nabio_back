@@ -382,8 +382,6 @@ export interface BioSite {
   services: ServiceItem[];
   events?: BioSiteEvent[];
   openingSchedules?: OpeningSchedule[];
-  events?: BioSiteEvent[];
-  openingSchedules?: OpeningSchedule[];
   pix: PixSettings;
   wifi: WifiSettings;
   location: LocationSettings;

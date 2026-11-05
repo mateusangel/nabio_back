@@ -45,6 +45,39 @@ create table if not exists public.bio_sites (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.bio_site_leads (
+  id text primary key,
+  bio_site_id text not null references public.bio_sites(id) on delete cascade,
+  name text,
+  email text,
+  phone text,
+  message text,
+  referral_code text,
+  lead_type text not null default 'quote',
+  requested_service text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (bio_site_id, phone)
+);
+
+create index if not exists bio_site_leads_bio_site_id_created_at_idx
+  on public.bio_site_leads (bio_site_id, created_at);
+
+create table if not exists public.bio_site_referrals (
+  id text primary key,
+  bio_site_id text not null references public.bio_sites(id) on delete cascade,
+  referral_code text not null,
+  event_type text not null check (event_type in ('visit', 'signup')),
+  referred_user_id text,
+  created_at timestamptz not null default now(),
+  unique (bio_site_id, event_type, referred_user_id)
+);
+
+create index if not exists bio_site_referrals_bio_site_id_event_type_created_at_idx
+  on public.bio_site_referrals (bio_site_id, event_type, created_at);
+create index if not exists bio_site_referrals_bio_site_id_referral_code_idx
+  on public.bio_site_referrals (bio_site_id, referral_code);
+
 create table if not exists public.bio_site_media (
   id text primary key default gen_random_uuid()::text,
   bio_site_id text not null references public.bio_sites(id) on delete cascade,

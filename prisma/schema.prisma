@@ -50,33 +50,34 @@ enum BioSiteMediaUsage {
 }
 
 model BioSite {
-  id                   String           @id
-  ownerId              String?          @map("owner_id")
-  clientAccountId      String?          @map("client_account_id")
-  slug                 String           @unique
-  name                 String
-  status               String           @default("draft")
-  avatarUrl            String?          @map("avatar_url")
-  logoUrl              String?          @map("logo_url")
-  coverImageUrl        String?          @map("cover_image_url")
-  introVideoUrl        String?          @map("intro_video_url")
-  backgroundType       String           @default("solid") @map("background_type")
-  backgroundColor      String?          @map("background_color")
-  backgroundGradient   String?          @map("background_gradient")
-  backgroundImageUrl   String?          @map("background_image_url")
-  backgroundVideoUrl   String?          @map("background_video_url")
-  theme                Json?
-  content              Json?
-  clientAccessEmail    String?          @map("client_access_email")
-  clientAccessPasswordHash String?       @map("client_access_password_hash")
-  photoLimit           Int              @default(10) @map("photo_limit")
-  createdAt            DateTime         @default(now()) @map("created_at")
-  updatedAt            DateTime         @updatedAt @map("updated_at")
-  accessKeys           BioSiteAccessKey[]
-  media                BioSiteMedia[]
-  bookings             BioSiteBooking[]
-  leads                BioSiteLead[]
-  clientAccount        ClientAccount?   @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
+  id                       String             @id
+  ownerId                  String?            @map("owner_id")
+  clientAccountId          String?            @map("client_account_id")
+  slug                     String             @unique
+  name                     String
+  status                   String             @default("draft")
+  avatarUrl                String?            @map("avatar_url")
+  logoUrl                  String?            @map("logo_url")
+  coverImageUrl            String?            @map("cover_image_url")
+  introVideoUrl            String?            @map("intro_video_url")
+  backgroundType           String             @default("solid") @map("background_type")
+  backgroundColor          String?            @map("background_color")
+  backgroundGradient       String?            @map("background_gradient")
+  backgroundImageUrl       String?            @map("background_image_url")
+  backgroundVideoUrl       String?            @map("background_video_url")
+  theme                    Json?
+  content                  Json?
+  clientAccessEmail        String?            @map("client_access_email")
+  clientAccessPasswordHash String?            @map("client_access_password_hash")
+  photoLimit               Int                @default(10) @map("photo_limit")
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
+  accessKeys               BioSiteAccessKey[]
+  media                    BioSiteMedia[]
+  bookings                 BioSiteBooking[]
+  leads                    BioSiteLead[]
+  referrals                BioSiteReferral[]
+  clientAccount            ClientAccount?     @relation(fields: [clientAccountId], references: [id], onDelete: SetNull)
 
   @@map("bio_sites")
 }
@@ -96,12 +97,12 @@ model ClientAccount {
 }
 
 model ClientSession {
-  id         String        @id @default(cuid())
-  tokenHash  String        @unique @map("token_hash")
-  accountId  String        @map("account_id")
-  expiresAt  DateTime      @map("expires_at")
-  createdAt  DateTime      @default(now()) @map("created_at")
-  account    ClientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id        String        @id @default(cuid())
+  tokenHash String        @unique @map("token_hash")
+  accountId String        @map("account_id")
+  expiresAt DateTime      @map("expires_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+  account   ClientAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, expiresAt])
   @@map("client_sessions")
@@ -126,34 +127,55 @@ model BioSiteBooking {
 }
 
 model BioSiteLead {
-  id        String   @id @default(cuid())
-  bioSiteId String   @map("bio_site_id")
-  name      String?
-  email     String?
-  phone     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  bioSite   BioSite  @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  bioSiteId        String   @map("bio_site_id")
+  name             String?
+  email            String?
+  phone            String?
+  message          String?
+  referralCode     String?  @map("referral_code")
+  leadType         String   @default("quote") @map("lead_type")
+  requestedService String?  @map("requested_service")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  bioSite          BioSite  @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
 
+  @@unique([bioSiteId, phone])
   @@index([bioSiteId, createdAt])
   @@map("bio_site_leads")
 }
 
+model BioSiteReferral {
+  id             String   @id
+  bioSiteId      String   @map("bio_site_id")
+  referralCode   String   @map("referral_code")
+  eventType      String   @map("event_type")
+  referredUserId String?  @map("referred_user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  bioSite        BioSite  @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+
+  @@unique([bioSiteId, eventType, referredUserId])
+  @@index([bioSiteId, eventType, createdAt])
+  @@index([bioSiteId, referralCode])
+  @@map("bio_site_referrals")
+}
+
 model BioSiteMedia {
-  id             String            @id @default(cuid())
-  bioSiteId      String            @map("bio_site_id")
-  type           BioSiteMediaType
-  usage          BioSiteMediaUsage @default(GALLERY)
-  url            String
-  storageKey     String?           @map("storage_key")
-  mimeType       String?           @map("mime_type")
-  fileSize       Int?              @map("file_size")
-  width          Int?
-  height         Int?
-  durationSeconds Int?             @map("duration_seconds")
-  sortOrder      Int               @default(0) @map("sort_order")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  updatedAt      DateTime          @updatedAt @map("updated_at")
-  bioSite        BioSite           @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+  id              String            @id @default(cuid())
+  bioSiteId       String            @map("bio_site_id")
+  type            BioSiteMediaType
+  usage           BioSiteMediaUsage @default(GALLERY)
+  url             String
+  storageKey      String?           @map("storage_key")
+  mimeType        String?           @map("mime_type")
+  fileSize        Int?              @map("file_size")
+  width           Int?
+  height          Int?
+  durationSeconds Int?              @map("duration_seconds")
+  sortOrder       Int               @default(0) @map("sort_order")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  bioSite         BioSite           @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
 
   @@index([bioSiteId, type, usage])
   @@index([bioSiteId, sortOrder])
@@ -161,19 +183,19 @@ model BioSiteMedia {
 }
 
 model BioSiteAccessKey {
-  id           String                     @id @default(cuid())
-  bioSiteId    String                     @map("bio_site_id")
-  name         String
-  keyPrefix    String                     @map("key_prefix")
-  keyHash      String                     @unique @map("key_hash")
-  level        AccessLevel
-  isActive     Boolean                    @default(true) @map("is_active")
-  expiresAt    DateTime?                  @map("expires_at")
-  lastUsedAt   DateTime?                  @map("last_used_at")
-  createdAt    DateTime                   @default(now()) @map("created_at")
-  updatedAt    DateTime                   @updatedAt @map("updated_at")
-  bioSite      BioSite                    @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
-  permissions  BioSiteAccessPermission[]
+  id          String                    @id @default(cuid())
+  bioSiteId   String                    @map("bio_site_id")
+  name        String
+  keyPrefix   String                    @map("key_prefix")
+  keyHash     String                    @unique @map("key_hash")
+  level       AccessLevel
+  isActive    Boolean                   @default(true) @map("is_active")
+  expiresAt   DateTime?                 @map("expires_at")
+  lastUsedAt  DateTime?                 @map("last_used_at")
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  updatedAt   DateTime                  @updatedAt @map("updated_at")
+  bioSite     BioSite                   @relation(fields: [bioSiteId], references: [id], onDelete: Cascade)
+  permissions BioSiteAccessPermission[]
 
   @@index([bioSiteId, isActive])
   @@index([keyPrefix])

@@ -222,6 +222,24 @@ function serializeBioSite(record: {
   };
 }
 
+function serializePublicBioSite(record: Parameters<typeof serializeBioSite>[0]) {
+  const site = serializeBioSite(record) as BioSitePayload;
+  const {
+    leads,
+    bookings,
+    analyticsEvents,
+    editKey,
+    clientEditKey,
+    clientAccessPassword,
+    clientAccessEmail,
+    clientAccessLevel,
+    clientPermission,
+    clientAccessMode,
+    ...publicSite
+  } = site;
+  return publicSite;
+}
+
 async function toRecordData(payload: BioSitePayload) {
   const theme = payload.theme && typeof payload.theme === 'object' ? payload.theme as BioSitePayload : {};
   const content = { ...payload };
@@ -612,7 +630,7 @@ app.get('/api/bio-sites/slug/:slug', async (request, response) => {
       response.status(404).json({ error: 'Este Bio Site está desativado.' });
       return;
     }
-    response.json(serializeBioSite(record));
+    response.json(serializePublicBioSite(record));
   } catch (error) {
     response.status(500).json({ error: 'Não foi possível carregar o Bio Site.', detail: String(error) });
   }
@@ -857,7 +875,25 @@ app.patch('/api/bio-sites/:id/bookings/:bookingId', async (request, response) =>
       const existing = leads.find(lead => String(lead.whatsapp || '').replace(/\D/g, '') === whatsapp);
       const now = new Date().toISOString();
       const lead = existing ? { ...existing, name: updated.customerName, lastService: updated.serviceName, updatedAt: now } : { id: randomUUID(), name: updated.customerName, whatsapp, lastService: updated.serviceName, lastBookingAt: updated.createdAt, createdAt: now, updatedAt: now };
-      await prisma.bioSite.update({ where: { id: request.params.id }, data: { content: { ...content, bookings: updatedBookings, leads: existing ? leads.map(item => item.id === existing.id ? lead : item) : [...leads, lead] } as Prisma.InputJsonValue } });
+      const operations: Prisma.PrismaPromise<unknown>[] = [
+        prisma.bioSite.update({ where: { id: request.params.id }, data: { content: { ...content, bookings: updatedBookings, leads: existing ? leads.map(item => item.id === existing.id ? lead : item) : [...leads, lead] } as Prisma.InputJsonValue } }),
+      ];
+      if (whatsapp.length >= 8 && whatsapp.length <= 15) {
+        operations.push(prisma.bioSiteLead.upsert({
+          where: { bioSiteId_phone: { bioSiteId: record.id, phone: whatsapp } },
+          update: { name: String(updated.customerName), requestedService: String(updated.serviceName), leadType: 'booking' },
+          create: {
+            id: typeof lead.id === 'string' ? lead.id : randomUUID(),
+            bioSiteId: record.id,
+            name: String(updated.customerName),
+            email: typeof updated.customerEmail === 'string' ? updated.customerEmail : null,
+            phone: whatsapp,
+            requestedService: String(updated.serviceName),
+            leadType: 'booking',
+          },
+        }));
+      }
+      await prisma.$transaction(operations);
     }
     response.json(updated);
   }
@@ -867,27 +903,168 @@ app.patch('/api/bio-sites/:id/bookings/:bookingId', async (request, response) =>
 // ─── Leads ────────────────────────────────────────────────────────────────────
 
 app.post('/api/bio-sites/:id/leads', async (request, response) => {
-  const { name, whatsapp, lastService } = request.body || {};
-  if (typeof name !== 'string' || typeof whatsapp !== 'string') { response.status(400).json({ error: 'name e whatsapp são obrigatórios.' }); return; }
+  const { name, whatsapp, email, message, referralCode, leadType, lastService } = request.body || {};
+  const normalizedWhatsapp = typeof whatsapp === 'string' ? whatsapp.replace(/\D/g, '') : '';
+  if (
+    typeof name !== 'string' || !name.trim() || name.length > 120 ||
+    normalizedWhatsapp.length < 8 || normalizedWhatsapp.length > 15 ||
+    (email !== undefined && (typeof email !== 'string' || email.length > 254)) ||
+    (message !== undefined && (typeof message !== 'string' || message.length > 2000)) ||
+    (referralCode !== undefined && (typeof referralCode !== 'string' || referralCode.length > 100)) ||
+    (leadType !== undefined && !['quote', 'reseller', 'booking'].includes(leadType))
+  ) {
+    response.status(400).json({ error: 'Informe um nome e WhatsApp válidos. Os demais campos devem respeitar os limites permitidos.' });
+    return;
+  }
   try {
     const record = await prisma.bioSite.findUnique({ where: { id: request.params.id } });
     if (!record) { response.status(404).json({ error: 'Bio Site não encontrado.' }); return; }
     const content = record.content && typeof record.content === 'object' ? record.content as BioSitePayload : {};
     const leads = Array.isArray(content.leads) ? content.leads as Array<Record<string, unknown>> : [];
-    const normalized = whatsapp.replace(/\D/g, '');
-    const existing = leads.find(lead => String(lead.whatsapp || '').replace(/\D/g, '') === normalized);
+    const existing = leads.find(lead => String(lead.whatsapp || '').replace(/\D/g, '') === normalizedWhatsapp);
     const now = new Date().toISOString();
-    const lead = existing ? { ...existing, name, lastService, updatedAt: now } : { id: randomUUID(), name, whatsapp: normalized, lastService, createdAt: now, updatedAt: now };
+    const lead = existing
+      ? {
+          ...existing,
+          name: name.trim(),
+          email: typeof email === 'string' ? email.trim().toLowerCase() : existing.email,
+          message: typeof message === 'string' ? message.trim() : existing.message,
+          referralCode: typeof referralCode === 'string' ? referralCode.trim() : existing.referralCode,
+          leadType: typeof leadType === 'string' ? leadType : existing.leadType,
+          requestedService: typeof lastService === 'string' ? lastService.trim() : existing.requestedService,
+          lastService: typeof lastService === 'string' ? lastService.trim() : existing.lastService,
+          updatedAt: now,
+        }
+      : {
+          id: randomUUID(),
+          name: name.trim(),
+          whatsapp: normalizedWhatsapp,
+          email: typeof email === 'string' ? email.trim().toLowerCase() : undefined,
+          message: typeof message === 'string' ? message.trim() : undefined,
+          referralCode: typeof referralCode === 'string' ? referralCode.trim() : undefined,
+          leadType: typeof leadType === 'string' ? leadType : 'quote',
+          requestedService: typeof lastService === 'string' ? lastService.trim() : undefined,
+          lastService: typeof lastService === 'string' ? lastService.trim() : undefined,
+          createdAt: now,
+          updatedAt: now,
+        };
     const nextLeads = existing ? leads.map(item => item.id === existing.id ? lead : item) : [...leads, lead];
-    await prisma.bioSite.update({ where: { id: request.params.id }, data: { content: { ...content, leads: nextLeads } as Prisma.InputJsonValue } });
+    await prisma.$transaction([
+      prisma.bioSiteLead.upsert({
+        where: { bioSiteId_phone: { bioSiteId: record.id, phone: normalizedWhatsapp } },
+        update: {
+          name: name.trim(),
+          email: typeof email === 'string' ? email.trim().toLowerCase() : null,
+          message: typeof message === 'string' ? message.trim() : null,
+          referralCode: typeof referralCode === 'string' ? referralCode.trim() : null,
+          leadType: typeof leadType === 'string' ? leadType : 'quote',
+          requestedService: typeof lastService === 'string' ? lastService.trim() : null,
+        },
+        create: {
+          id: typeof lead.id === 'string' ? lead.id : randomUUID(),
+          bioSiteId: record.id,
+          name: name.trim(),
+          email: typeof email === 'string' ? email.trim().toLowerCase() : null,
+          phone: normalizedWhatsapp,
+          message: typeof message === 'string' ? message.trim() : null,
+          referralCode: typeof referralCode === 'string' ? referralCode.trim() : null,
+          leadType: typeof leadType === 'string' ? leadType : 'quote',
+          requestedService: typeof lastService === 'string' ? lastService.trim() : null,
+        },
+      }),
+      prisma.bioSite.update({ where: { id: request.params.id }, data: { content: { ...content, leads: nextLeads } as Prisma.InputJsonValue } }),
+    ]);
     response.status(201).json(lead);
   }
   catch (error) { response.status(404).json({ error: 'Não foi possível salvar o contato.', detail: String(error) }); }
 });
 
+app.post('/api/bio-sites/:id/referrals', async (request, response) => {
+  const { referralCode, eventType, referredUserId } = request.body || {};
+  if (
+    typeof referralCode !== 'string' || referralCode.length > 100 ||
+    !['visit', 'signup'].includes(eventType) ||
+    (eventType === 'signup' && (typeof referredUserId !== 'string' || !referredUserId.trim() || referredUserId.length > 100)) ||
+    (referredUserId !== undefined && (typeof referredUserId !== 'string' || referredUserId.length > 100))
+  ) {
+    response.status(400).json({ error: 'Dados de indicação inválidos.' });
+    return;
+  }
+
+  try {
+    const record = await prisma.bioSite.findUnique({ where: { id: request.params.id } });
+    if (!record || record.status === 'disabled' || record.status === 'archived') {
+      response.status(404).json({ error: 'Bio Site não encontrado.' });
+      return;
+    }
+    const content = record.content && typeof record.content === 'object' ? record.content as BioSitePayload : {};
+    const profile = content.resellerProfile && typeof content.resellerProfile === 'object'
+      ? content.resellerProfile as BioSitePayload
+      : {};
+    if (
+      profile.enabled !== true ||
+      profile.referralEnabled !== true ||
+      referralCode !== record.slug
+    ) {
+      response.status(400).json({ error: 'O link de indicação não está ativo ou não corresponde a este Bio Site.' });
+      return;
+    }
+
+    const referral = {
+      bioSiteId: record.id,
+      referralCode,
+      eventType,
+      referredUserId: typeof referredUserId === 'string' ? referredUserId.trim() : null,
+    };
+    const saved = eventType === 'signup'
+      ? await prisma.bioSiteReferral.upsert({
+          where: {
+            bioSiteId_eventType_referredUserId: {
+              bioSiteId: record.id,
+              eventType,
+              referredUserId: referral.referredUserId as string,
+            },
+          },
+          update: {},
+          create: { id: randomUUID(), ...referral },
+        })
+      : await prisma.bioSiteReferral.create({ data: { id: randomUUID(), ...referral } });
+    response.status(201).json({ id: saved.id, eventType: saved.eventType, createdAt: saved.createdAt.toISOString() });
+  } catch (error) {
+    response.status(500).json({ error: 'Não foi possível registrar a indicação.', detail: String(error) });
+  }
+});
+
+app.get('/api/bio-sites/:id/referrals/summary', requireActiveUser, async (request: AuthenticatedRequest, response) => {
+  const period = String(request.query.period || '7d');
+  if (!['7d', '30d', 'all'].includes(period)) {
+    response.status(400).json({ error: 'O período deve ser 7d, 30d ou all.' });
+    return;
+  }
+  try {
+    const site = await findEditableBioSite(request, request.params.id);
+    if (!site) {
+      response.status(404).json({ error: 'Bio Site não encontrado.' });
+      return;
+    }
+    const since = period === 'all' ? undefined : new Date(Date.now() - (period === '7d' ? 7 : 30) * 24 * 60 * 60 * 1000);
+    const counts = await prisma.bioSiteReferral.groupBy({
+      by: ['eventType'],
+      where: { bioSiteId: site.id, ...(since ? { createdAt: { gte: since } } : {}) },
+      _count: { _all: true },
+    });
+    response.json({
+      visits: counts.find(item => item.eventType === 'visit')?._count._all || 0,
+      signups: counts.find(item => item.eventType === 'signup')?._count._all || 0,
+    });
+  } catch (error) {
+    response.status(500).json({ error: 'Não foi possível carregar as métricas de indicação.', detail: String(error) });
+  }
+});
+
 // ─── Analytics ────────────────────────────────────────────────────────────────
 
-app.get('/api/analytics/events', async (request, response) => {
+app.get('/api/analytics/events', requireClientOrOwner, async (request: AuthenticatedRequest, response) => {
   const bioSiteId = String(request.query.bioSiteId || '');
   if (!bioSiteId) {
     response.status(400).json({ error: 'bioSiteId é obrigatório.' });
@@ -895,8 +1072,12 @@ app.get('/api/analytics/events', async (request, response) => {
   }
 
   try {
-    const record = await prisma.bioSite.findUnique({ where: { id: bioSiteId } });
-    const content = record?.content && typeof record.content === 'object' ? record.content as BioSitePayload : {};
+    const record = await findEditableBioSite(request, bioSiteId);
+    if (!record) {
+      response.status(404).json({ error: 'Bio Site não encontrado.' });
+      return;
+    }
+    const content = record.content && typeof record.content === 'object' ? record.content as BioSitePayload : {};
     response.json(Array.isArray(content.analyticsEvents) ? content.analyticsEvents : []);
   } catch (error) {
     response.status(500).json({ error: 'Não foi possível carregar os eventos.', detail: String(error) });

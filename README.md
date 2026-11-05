@@ -18,3 +18,13 @@ View your app in AI Studio: https://ai.studio/apps/01c8a73c-5459-4361-be2b-ca102
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Database migrations
+
+Apply committed Prisma migrations to the configured PostgreSQL database with:
+
+`npm run db:migrate`
+
+Regenerate the Prisma client after changing `prisma/schema.prisma` with:
+
+`npm run db:generate`
